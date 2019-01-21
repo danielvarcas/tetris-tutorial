@@ -24,7 +24,9 @@ export default class GameSceneAR extends Component {
     isTracking: false,
     initialized: false,
     modelMap: [],
+    activatedIndexes: [],
     loadedModelsCounter: 0,
+    nextModelIndex: 0,
     planeWidth: 0,
     planeLength: 0
   }
@@ -50,27 +52,6 @@ export default class GameSceneAR extends Component {
     )
   }
 
-  render() {
-    return (
-      <ViroARScene onTrackingUpdated={this._onInitialized}>
-        <ViroDirectionalLight color="#ffffff"
-          direction={[1, -1, -10]}
-          shadowOrthographicPosition={[0, 8, -2]}
-          shadowOrthographicSize={5}
-          shadowNearZ={1}
-          shadowFarZ={4}
-          castsShadow={true}
-        />
-        {
-          this.state.isTracking ?
-            this.getARScene() :
-            this.getUIText(
-              this.state.initialized ? "Initializing" : "No Tracking"
-            )
-        }
-      </ViroARScene>
-    );
-  }
   _onInitialized = (state, reason) => {
     if (state == ViroConstants.TRACKING_NORMAL) {
       this.setState({
@@ -94,6 +75,68 @@ export default class GameSceneAR extends Component {
   deadZoneCollide = () => {
     this.props.arSceneNavigator.viroAppProps.looseLive()
   }
+
+  getModelByType(modelType, index) {
+    const modelId = `$model:{modelType}-no:${index}`
+    const yPosition = .5 + 0.1 * index
+    return (
+      <Viro3DObject
+        type="VRX"
+        highAccuracyEvents
+        key={index}
+        scale={[0.04, 0.04, 0.04]}
+        viroTag={modelId}
+        onLoadEnd={() => {
+          this.setState({
+            loadedModelsCounter: this.state.loadedModelsCounter + 1
+          })
+        }}
+        dragType="FixedDistance"
+        position={[0, yPosition, 0]}
+        source={MODELS[modelType]}
+        onDrag={() => {
+          if (!this.state.activatedIndexes.includes(modelId)) {
+            this.activateModelGravity(modelId, index)
+          }
+        }}
+        opacity={
+          this.state.loadedModelsCounter === this.state.modelMap.length &&
+            (index === this.state.nextModelIndex
+              || this.state.activatedIndexes.includes(modelId)
+            ) ? 1 : 0
+        }
+        physicsBody={{
+          type: 'Dynamic',
+          shape: {
+            type: "Compound"
+          },
+          enabled: this.state.activatedIndexes.includes(`$model:{modelType}-no:${index}`),
+          mass: 1,
+        }}
+        animation={{
+          name: "loopRotate",
+          run: this.state.nextModelIndex === index,
+          interruptible: true,
+          loop: true
+        }}
+      />
+    )
+  }
+
+  activateModelGravity(modelId, index) {
+    const { updateScore, changeLevel } = this.props.arSceneNavigator.viroAppProps
+    this.setState({
+      activatedIndexes: [...this.state.activatedIndexes, modelId],
+      nextModelIndex: index + 1
+    }, () => {
+      updateScore()
+      if (this.state.activatedIndexes.length === this.state.modelMap.length) {
+        changeLevel()
+      }
+    })
+  }
+  view raw
+
 
   getARScene() {
     return (
@@ -121,6 +164,44 @@ export default class GameSceneAR extends Component {
       </ViroARPlaneSelector>
     )
   }
+
+  render() {
+    return (
+      <ViroARScene onTrackingUpdated={this._onInitialized}>
+        <ViroDirectionalLight color="#ffffff"
+          direction={[1, -1, -10]}
+          shadowOrthographicPosition={[0, 8, -2]}
+          shadowOrthographicSize={5}
+          shadowNearZ={1}
+          shadowFarZ={4}
+          castsShadow={true}
+        />
+        {
+          this.state.planeWidth === 0 && this.getUIText("Game Started - Please select play area")
+        }
+        {
+          this.state.loadedModelsCounter !== this.state.modelMap.length &&
+          this.state.planeWidth !== 0 &&
+          this.getUIText(`Loading 3d models ${this.state.loadedModelsCounter} of ${this.state.modelMap.length}`)
+        }
+        {
+          this.state.isTracking ?
+            this.getARScene() :
+            this.getUIText(
+              this.state.initialized ? "Initializing" : "No Tracking"
+            )
+        }
+      </ViroARScene>
+    );
+  }
 }
+
+ViroAnimations.registerAnimations({
+  loopRotate: {
+    properties: {
+      rotateY: "+=90",
+    }, duration: 1000
+  }
+});
 
 module.exports = GameSceneAR;
